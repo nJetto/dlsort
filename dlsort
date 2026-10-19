@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# dlsort - auto-sort your Downloads folder (Linux)
+# Run `dlsort help` for usage. Requires: inotify-tools
+
+set -u
+
+NAME="dlsort"
+VERSION="1.1.0"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME"
+PID_FILE="$STATE_DIR/$NAME.pid"
+LOG_FILE="$STATE_DIR/$NAME.log"
+SELF="$(readlink -f "$0")"
+
+# ---------- Folders (read from your system's user dirs, so localized names work too) ----------
+xdg_dir() { # $1 = XDG dir name, $2 = fallback under $HOME
+    local d
+    d="$(xdg-user-dir "$1" 2>/dev/null)"
+    if [[ -z "$d" || "$d" == "$HOME" ]]; then d="$HOME/$2"; fi
+    echo "$d"
+}
+
+SRC="$(xdg_dir DOWNLOAD Downloads)"
+DIR_DOCS="$(xdg_dir DOCUMENTS Documents)"
+DIR_PICTURES="$(xdg_dir PICTURES Pictures)"
+DIR_VIDEOS="$(xdg_dir VIDEOS Videos)"
+DIR_MUSIC="$(xdg_dir MUSIC Music)"
+DIR_ARCHIVES="$DIR_DOCS/Archives"
+
+# ---------- Rules: file extension -> destination folder. Edit to taste. ----------
+dest_for() {
+    local ext="${1##*.}"
+    ext="${ext,,}"
+    case "$ext" in
+        jpg|jpeg|png|gif|webp|bmp|svg|heic|tif|tiff|avif|ico)
+            echo "$DIR_PICTURES" ;;
+        mp4|mkv|avi|mov|webm|flv|wmv|m4v)
+            echo "$DIR_VIDEOS" ;;
+        mp3|flac|wav|ogg|m4a|opus|aac|wma)
+            echo "$DIR_MUSIC" ;;
+        pdf|doc|docx|odt|xls|xlsx|ods|ppt|pptx|odp|txt|rtf|epub|fb2|djvu|csv|md)
+            echo "$DIR_DOCS" ;;
+        zip|rar|7z|tar|gz|xz|bz2|tgz|zst)
+            echo "$DIR_ARCHIVES" ;;
+        *)
+            echo "" ;;   # everything else stays in Downloads
+    esac
+}
+
+# ---------- Helpers ----------
+log() {
+    mkdir -p "$STATE_DIR"
+    echo "$(date '+%F %T') $*" >> "$LOG_FILE"
+    if [[ -t 1 ]]; then echo "$*"; fi
+}
+
+is_temp() { # skip partial downloads and hidden files
+    case "${1,,}" in
+        *.part|*.crdownload|*.tmp|*.download|*.opdownload|.*) return 0 ;;
+    esac
+    return 1
+}
+
+sort_file() {
+    local path="$1" base dest target name ext n=1
+    base="${path##*/}"
+    [[ -f "$path" ]] || return 0
+    is_temp "$base" && return 0
+    [[ "$base" == *.* ]] || return 0
+    dest="$(dest_for "$base")"
+    [[ -n "$dest" ]] || return 0
+    mkdir -p "$dest" || return 0
+
+    target="$dest/$base"
+    if [[ -e "$target" ]]; then   # name taken -> add (1), (2), ... never overwrite
+        name="${base%.*}"
+        ext=".${base##*.}"
+        while [[ -e "$dest/$name ($n)$ext" ]]; do ((n++)); done
+        target="$dest/$name ($n)$ext"
+    fi
+
+    if mv -- "$path" "$target"; then
+        log "$base -> $target"
+    fi
+}
+
+sweep() {
+    local f
+    for f in "$SRC"/*; do sort_file "$f"; done
+}
+
+need_deps() {
+    if ! command -v inotifywait >/dev/null 2>&1; then
+        echo "inotifywait not found. Install inotify-tools first:" >&2
+        echo "  Debian/Ubuntu/Mint: sudo apt install inotify-tools" >&2
+        echo "  Fedora:             sudo dnf install inotify-tools" >&2
+        echo "  Arch:               sudo pacman -S inotify-tools" >&2
+        echo "  openSUSE:           sudo zypper install inotify-tools" >&2
+        exit 1
+    fi
+}
+
+is_running() {
+    [[ -f "$PID_FILE" ]] || return 1
+    local pid
+    pid="$(<"$PID_FILE")"
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    grep -qa "_run" "/proc/$pid/cmdline" 2>/dev/null
+}
+
+# ---------- Main loop (launched in the background by `start`) ----------
+run() {
+    mkdir -p "$STATE_DIR"
+    log "started, watching: $SRC"
+    sweep
+    while IFS= read -r name; do
+        sort_file "$SRC/$name"
+    done < <(inotifywait -m -q -e close_write -e moved_to --format '%f' "$SRC")
+}
+
+# ---------- Commands ----------
+cmd_help() {
+    cat <<EOF
+$NAME $VERSION - auto-sort your Downloads folder
+
+Usage:
+  $NAME <command>
+
+Commands:
+  start      Start watching Downloads in the background
+  stop       Stop watching
+  restart    Restart the watcher
+  status     Show state, autostart and the latest moves
+  once       Sort files already in Downloads, then exit
+  log        Follow the log live (Ctrl+C to quit)
+  enable     Start automatically when you log in
+  disable    Remove autostart
+  version    Show version
+  help       Show this help
+
+Where files go:
+  Watching    $SRC
+  Images   -> $DIR_PICTURES
+  Videos   -> $DIR_VIDEOS
+  Music    -> $DIR_MUSIC
+  Docs     -> $DIR_DOCS
+  Archives -> $DIR_ARCHIVES
+  Anything else stays where it is.
+
+Log file: $LOG_FILE
+Edit the dest_for() function in $SELF to change the rules.
+EOF
+}
+
+cmd_start() {
+    need_deps
+    if is_running; then
+        echo "Already running (PID $(<"$PID_FILE"))"
+        return 0
+    fi
+    mkdir -p "$STATE_DIR"
+    setsid "$SELF" _run >/dev/null 2>&1 </dev/null &
+    echo $! > "$PID_FILE"
+    sleep 0.4
+    if is_running; then
+        echo "Started. Watching: $SRC"
+    else
+        echo "Failed to start, check the log: $LOG_FILE" >&2
+        rm -f "$PID_FILE"
+        return 1
+    fi
+}
+
+cmd_stop() {
+    if ! is_running; then
+        echo "Not running"
+        rm -f "$PID_FILE"
+        return 0
+    fi
+    local pid
+    pid="$(<"$PID_FILE")"
+    kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null   # kill the whole group, incl. inotifywait
+    rm -f "$PID_FILE"
+    log "stopped"
+    echo "Stopped"
+}
+
+cmd_status() {
+    if is_running; then
+        echo "State:     running (PID $(<"$PID_FILE"))"
+    else
+        echo "State:     not running"
+    fi
+    echo "Watching:  $SRC"
+    if [[ -f "$HOME/.config/autostart/$NAME.desktop" ]]; then
+        echo "Autostart: on"
+    else
+        echo "Autostart: off"
+    fi
+    if [[ -f "$LOG_FILE" ]]; then
+        echo "--- latest log entries ---"
+        tail -n 5 "$LOG_FILE"
+    fi
+}
+
+cmd_enable() {
+    mkdir -p "$HOME/.config/autostart"
+    cat > "$HOME/.config/autostart/$NAME.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=dlsort
+Comment=Auto-sort the Downloads folder
+Exec="$SELF" start
+Terminal=false
+EOF
+    echo "Autostart enabled"
+}
+
+cmd_disable() {
+    rm -f "$HOME/.config/autostart/$NAME.desktop"
+    echo "Autostart disabled"
+}
+
+case "${1:-help}" in
+    start)            cmd_start ;;
+    stop)             cmd_stop ;;
+    restart)          cmd_stop; cmd_start ;;
+    status)           cmd_status ;;
+    once)             sweep; echo "Done" ;;
+    log)              mkdir -p "$STATE_DIR"; touch "$LOG_FILE"; tail -n 20 -f "$LOG_FILE" ;;
+    enable)           cmd_enable ;;
+    disable)          cmd_disable ;;
+    version|-v|--version) echo "$NAME $VERSION" ;;
+    help|-h|--help)   cmd_help ;;
+    _run)             run ;;
+    *)
+        echo "Unknown command: $1" >&2
+        echo "Run '$NAME help' to see what's available." >&2
+        exit 1 ;;
+esac

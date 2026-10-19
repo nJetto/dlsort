@@ -1,4 +1,4 @@
-# 📂 dlsort
+# dlsort
 
 **Your Downloads folder, sorted automatically.**
 
@@ -11,7 +11,7 @@ dlsort quietly watches your Downloads folder and, the moment a download finishes
 ~/Downloads/backup.zip       →  ~/Documents/Archives/backup.zip
 ```
 
-## ⚡ Quick start
+## Quick start
 
 ```bash
 # 1. Install the one dependency (Debian/Ubuntu/Mint shown, other distros below)
@@ -26,7 +26,7 @@ install -Dm755 dlsort ~/.local/bin/dlsort
 dlsort start
 ```
 
-That's it. Download something and watch it land in the right folder. 🎉
+That's it. Download something and watch it land in the right folder. 
 
 A few handy follow-ups:
 
@@ -38,7 +38,7 @@ dlsort status    # see what it's doing
 
 > **`dlsort: command not found`?** Make sure `~/.local/bin` is in your `PATH`. Most distros add it automatically after you log out and back in. Or run it directly with `./dlsort start`.
 
-## 🎛️ Commands
+## Commands
 
 | Command | What it does |
 | --- | --- |
@@ -53,7 +53,7 @@ dlsort status    # see what it's doing
 | `dlsort version` | Print the version |
 | `dlsort help` | Show built-in help, including the folders it detected on your system |
 
-## 🗂️ What goes where
+## What goes where
 
 | Type | Extensions | Destination |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ dlsort status    # see what it's doing
 
 Folder locations come from your system's user directories (`xdg-user-dir`), so localized folder names such as `Загрузки` or `Bilder` work out of the box. If your system doesn't define them, dlsort falls back to `~/Downloads`, `~/Documents`, `~/Pictures`, `~/Videos` and `~/Music`.
 
-## 🖥️ Supported systems
+## Supported systems
 
 | System | Status |
 | --- | --- |
@@ -96,7 +96,7 @@ Folder locations come from your system's user directories (`xdg-user-dir`), so l
 
 **Autostart** (`dlsort enable`) uses the standard XDG autostart mechanism, so it works on KDE Plasma, GNOME, XFCE, Cinnamon, MATE, LXQt and anything else that honors `~/.config/autostart`. If you use a bare window manager (i3, Sway, Hyprland, …), skip `enable` and add `dlsort start` to your WM's startup config instead.
 
-## 🛠️ Make it yours
+## Make it yours
 
 Open the script (`~/.local/bin/dlsort`) and find the `dest_for()` function near the top. It's a plain `case` block:
 
@@ -111,7 +111,7 @@ mp3|flac|wav|ogg|m4a|opus|aac|wma)
 
 Then run `dlsort restart`. Destination folders are created automatically if they don't exist.
 
-## 🔒 Safe by design
+## Safe by design
 
 - **Never overwrites.** If `photo.png` already exists at the destination, the new file becomes `photo (1).png`.
 - **Never deletes.** Files are only moved.
@@ -119,13 +119,13 @@ Then run `dlsort restart`. Destination folders are created automatically if they
 - **Top level only.** Subfolders in Downloads and hidden files are left alone.
 - **Offline.** No network access, no telemetry, no dependencies beyond the ones above.
 
-## 🔍 How it works
+## How it works
 
 `dlsort start` launches a background loop built on `inotifywait`. It reacts to two events: a file finishing a write, and a file being renamed into Downloads. Each new file is matched against the rules, moved, and logged. `dlsort stop` ends the whole process group, so nothing is left running.
 
 The log lives at `~/.local/state/dlsort/dlsort.log`.
 
-## 🩹 Troubleshooting
+## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
@@ -136,7 +136,7 @@ The log lives at `~/.local/state/dlsort/dlsort.log`.
 | Your browser saves elsewhere | dlsort watches the system Downloads directory. Point your browser at it or change `SRC` in the script |
 | `Already running` | That's fine. Use `dlsort restart` if you edited the script |
 
-## 🗑️ Uninstall
+## Uninstall
 
 ```bash
 dlsort stop
@@ -145,6 +145,6 @@ rm ~/.local/bin/dlsort
 rm -r ~/.local/state/dlsort    # optional: removes the log
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Bug reports, ideas and pull requests are welcome. If dlsort misbehaves on your distro, please open an issue and include the output of `dlsort version` and `dlsort status`.
